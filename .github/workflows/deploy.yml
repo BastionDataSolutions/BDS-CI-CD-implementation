@@ -20,7 +20,7 @@ jobs:
       - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::605134434970:role/github-actions-demo-task-client
+          role-to-assume: arn:aws:iam::605134434970:role/ECSGithub
           aws-region: us-west-2
 
       - name: Login to Amazon ECR
@@ -38,3 +38,4 @@ jobs:
       - name: Push Docker image to ECR
         run: |
           docker push 605134434970.dkr.ecr.us-west-2.amazonaws.com/demo/demoregistery:${{ github.sha }}
+
