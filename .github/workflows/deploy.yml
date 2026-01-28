@@ -50,9 +50,10 @@ jobs:
       - name: Update ECS service
         run: |
           aws ecs update-service \
-            --cluster demo-cluster \
+            --cluster blushing-gecko-2ajqo0 \
             --service demo-service \
             --force-new-deployment
+
 
 
 
