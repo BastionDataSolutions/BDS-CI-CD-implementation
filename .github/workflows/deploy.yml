@@ -37,7 +37,8 @@ jobs:
 
       - name: Push Docker image to ECR
         run: |
-          docker push 605134434970.dkr.ecr.us-west-2.amazonaws.com/demo/demoregistery:latest
+          docker push 605134434970.dkr.ecr.us-west-2.amazonaws.com/demo/demoregistery:${{ github.sha }}
+
 
       - name: Update ECS service
         run: |
@@ -45,4 +46,5 @@ jobs:
             --cluster demo-cluster \
             --service demo-service \
             --force-new-deployment
+
 
