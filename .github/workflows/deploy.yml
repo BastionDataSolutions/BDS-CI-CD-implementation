@@ -1,4 +1,4 @@
-name: CI - Build and Push to ECR
+name: CI - Build, Push to ECR, Deploy to ECS
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  docker-build:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,35 +26,66 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      # -------------------------------
+      # Build & Push Image (SHA based)
+      # -------------------------------
       - name: Build Docker image
         run: |
           docker build -t demo-task-client:${{ github.sha }} .
 
-      - name: Tag Docker image
+      - name: Tag Docker image for ECR
         run: |
           docker tag demo-task-client:${{ github.sha }} \
           605134434970.dkr.ecr.us-west-2.amazonaws.com/demo/demoregistery:${{ github.sha }}
-          aws ecr describe-images \
-          --repository-name demo/demoregistery \
-          --image-ids imageTag=${{ github.sha }} \
-           && echo "Image already exists, skipping push" \
-           || docker push 605134434970.dkr.ecr.us-west-2.amazonaws.com/demo/demoregistery:${{ github.sha }}
 
-          
-
-      - name: Push Docker image to ECR
+      - name: Push image to ECR (skip if exists)
         run: |
-          docker push 605134434970.dkr.ecr.us-west-2.amazonaws.com/demo/demoregistery:${{ github.sha }}
+          aws ecr describe-images \
+            --repository-name demo/demoregistery \
+            --image-ids imageTag=${{ github.sha }} \
+          && echo "Image already exists, skipping push" \
+          || docker push 605134434970.dkr.ecr.us-west-2.amazonaws.com/demo/demoregistery:${{ github.sha }}
 
+      # ---------------------------------------
+      # Dynamic ECS Task Definition Deployment
+      # ---------------------------------------
+      - name: Fetch current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition demo-task \
+            --query taskDefinition \
+            > task-def.json
+
+      - name: Create new task definition revision
+        run: |
+          jq '
+            .containerDefinitions[0].image =
+            "605134434970.dkr.ecr.us-west-2.amazonaws.com/demo/demoregistery:${{ github.sha }}"
+            |
+            del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy
+            )
+          ' task-def.json > new-task-def.json
+
+      - name: Register new ECS task definition
+        id: register-task-def
+        run: |
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
 
       - name: Update ECS service
         run: |
           aws ecs update-service \
             --cluster blushing-gecko-2ajqo0 \
             --service demo-service \
-            --task-definition demo-task:NEW_REVISION
-
-
-
-
-
+            --task-definition $TASK_DEF_ARN
