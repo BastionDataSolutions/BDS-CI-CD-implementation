@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - ecs-test
 
 permissions:
   id-token: write
@@ -13,6 +14,15 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPO: ${{ vars.ECR_REPO }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      ECS_TASK_DEFINITION_NAME: ${{ vars.ECS_TASK_DEFINITION_NAME }}
+      CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -20,47 +30,65 @@ jobs:
       - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::605134434970:role/ECSGithub
-          aws-region: us-west-2
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/ECSGithub
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
       # -------------------------------
-      # Build & Push Image (SHA based)
+      # Build Image
       # -------------------------------
       - name: Build Docker image
         run: |
-          docker build -t demo-task-client:${{ github.sha }} .
+          docker build -t $CONTAINER_NAME:${{ github.sha }} .
 
+      # -------------------------------
+      # Security Scan (MANDATORY)
+      # -------------------------------
+      - name: Scan Docker image (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.CONTAINER_NAME }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          exit-code: 1
+
+      # -------------------------------
+      # Tag & Push Image
+      # -------------------------------
       - name: Tag Docker image for ECR
         run: |
-          docker tag demo-task-client:${{ github.sha }} \
-          605134434970.dkr.ecr.us-west-2.amazonaws.com/demo/demoregistery:${{ github.sha }}
+          docker tag $CONTAINER_NAME:${{ github.sha }} \
+          $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${{ github.sha }}
 
       - name: Push image to ECR (skip if exists)
         run: |
           aws ecr describe-images \
-            --repository-name demo/demoregistery \
+            --repository-name $ECR_REPO \
             --image-ids imageTag=${{ github.sha }} \
           && echo "Image already exists, skipping push" \
-          || docker push 605134434970.dkr.ecr.us-west-2.amazonaws.com/demo/demoregistery:${{ github.sha }}
+          || docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${{ github.sha }}
 
       # ---------------------------------------
-      # Dynamic ECS Task Definition Deployment
+      # ECS DEPLOYMENT (MAIN BRANCH ONLY)
       # ---------------------------------------
       - name: Fetch current ECS task definition
+        if: github.ref == 'refs/heads/main'
         run: |
           aws ecs describe-task-definition \
-            --task-definition demo-task \
+            --task-definition $ECS_TASK_DEFINITION_NAME \
             --query taskDefinition \
             > task-def.json
 
       - name: Create new task definition revision
+        if: github.ref == 'refs/heads/main'
         run: |
           jq '
-            .containerDefinitions[0].image =
-            "605134434970.dkr.ecr.us-west-2.amazonaws.com/demo/demoregistery:${{ github.sha }}"
+            .containerDefinitions |= map(
+              if .name=="'"$CONTAINER_NAME"'" then
+                .image = "'"$AWS_ACCOUNT_ID"'.dkr.ecr.'"$AWS_REGION"'.amazonaws.com/'"$ECR_REPO"':'"${{ github.sha }}"'"
+              else . end
+            )
             |
             del(
               .taskDefinitionArn,
@@ -74,6 +102,7 @@ jobs:
           ' task-def.json > new-task-def.json
 
       - name: Register new ECS task definition
+        if: github.ref == 'refs/heads/main'
         id: register-task-def
         run: |
           TASK_DEF_ARN=$(aws ecs register-task-definition \
@@ -84,8 +113,9 @@ jobs:
           echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
 
       - name: Update ECS service
+        if: github.ref == 'refs/heads/main'
         run: |
           aws ecs update-service \
-            --cluster blushing-gecko-2ajqo0 \
-            --service demo-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
             --task-definition $TASK_DEF_ARN
