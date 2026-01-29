@@ -30,7 +30,8 @@ jobs:
       - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/ECSGithub
+          # 🔴 FIX: Role ARN hardcoded (OIDC requires static ARN)
+          role-to-assume: arn:aws:iam::605134434970:role/ECSGithub
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -119,3 +120,10 @@ jobs:
             --cluster $ECS_CLUSTER \
             --service $ECS_SERVICE \
             --task-definition $TASK_DEF_ARN
+
+      - name: Wait for ECS service to become stable
+        if: github.ref == 'refs/heads/main'
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $ECS_SERVICE
