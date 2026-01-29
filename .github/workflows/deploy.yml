@@ -121,9 +121,5 @@ jobs:
             --service $ECS_SERVICE \
             --task-definition $TASK_DEF_ARN
 
-      - name: Wait for ECS service to become stable
-        if: github.ref == 'refs/heads/main'
-        run: |
-          aws ecs wait services-stable \
-            --cluster $ECS_CLUSTER \
-            --services $ECS_SERVICE
+      
+
