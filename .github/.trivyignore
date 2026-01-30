@@ -1,3 +1,2 @@
-# Python packaging metadata false positives
-CVE-2026-23949
-CVE-2026-24049
+# Unfixed glibc vulnerability in Debian base image
+CVE-2026-0861
