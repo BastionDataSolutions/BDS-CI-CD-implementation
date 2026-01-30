@@ -53,7 +53,7 @@ jobs:
           image-ref: ${{ env.CONTAINER_NAME }}:${{ github.sha }}
           severity: HIGH,CRITICAL
           exit-code: 1
-          ignorefile: .trivyignore
+          trivyignores: .trivyignore
 
 
       # -------------------------------
@@ -124,5 +124,6 @@ jobs:
             --task-definition $TASK_DEF_ARN
 
       
+
 
 
