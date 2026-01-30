@@ -62,7 +62,9 @@ jobs:
       # Tag & Push Image
       # -------------------------------
       - name: Tag Docker image for ECR
-        run: docker tag $CONTAINER_NAME:${{ github.sha }} $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${{ github.sha }}
+        run: |
+          $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${{ github.sha }}
+          docker tag $CONTAINER_NAME:${{ github.sha }} $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${{ github.sha }}
 
 
 
@@ -127,6 +129,7 @@ jobs:
             --task-definition $TASK_DEF_ARN
 
       
+
 
 
 
