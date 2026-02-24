@@ -1,4 +1,4 @@
-name: CI - Build, Push to ECR, Deploy to ECS
+name: CI - Build, Scan, Push (Approval Test Mode)
 
 on:
   push:
@@ -10,18 +10,19 @@ permissions:
   id-token: write
   contents: read
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+env:
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPO: ${{ vars.ECR_REPO }}
+  CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}
 
-    env:
-      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      ECR_REPO: ${{ vars.ECR_REPO }}
-      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
-      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
-      ECS_TASK_DEFINITION_NAME: ${{ vars.ECS_TASK_DEFINITION_NAME }}
-      CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}
+jobs:
+
+  # ======================================================
+  # 1️⃣ BUILD + SECURITY SCAN + PUSH (CI LAYER)
+  # ======================================================
+  build-and-push:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -30,24 +31,17 @@ jobs:
       - name: Configure AWS credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          # 🔴 FIX: Role ARN hardcoded (OIDC requires static ARN)
           role-to-assume: arn:aws:iam::605134434970:role/ECSGithub
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # -------------------------------
-      # Build Image
-      # -------------------------------
-      - name: Build Docker image
+      - name: Build Docker image (Immutable Tag)
         run: |
           docker build -t $CONTAINER_NAME:${{ github.sha }} .
 
-      # -------------------------------
-      # Security Scan (MANDATORY)
-      # -------------------------------
-      - name: Scan Docker image (Trivy)
+      - name: Scan Docker image (Trivy - DevSecOps)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.CONTAINER_NAME }}:${{ github.sha }}
@@ -55,86 +49,8 @@ jobs:
           ignore-unfixed: true
           exit-code: 1
 
-          
-
-
-      # -------------------------------
-      # Tag & Push Image
-      # -------------------------------
-      - name: Tag Docker image for ECR
+      - name: Tag image for ECR
         run: |
-          docker tag "$CONTAINER_NAME:${{ github.sha }}" "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${{ github.sha }}"
-
-
-
-
-      - name: Push image to ECR (skip if exists)
-        run: |
-          aws ecr describe-images \
-            --repository-name $ECR_REPO \
-            --image-ids imageTag=${{ github.sha }} \
-          && echo "Image already exists, skipping push" \
-          || docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${{ github.sha }}
-
-      # ---------------------------------------
-      # ECS DEPLOYMENT (MAIN BRANCH ONLY)
-      # ---------------------------------------
-      - name: Fetch current ECS task definition
-        if: github.ref == 'refs/heads/main'
-        run: |
-          aws ecs describe-task-definition \
-            --task-definition $ECS_TASK_DEFINITION_NAME \
-            --query taskDefinition \
-            > task-def.json
-
-      - name: Create new task definition revision
-        if: github.ref == 'refs/heads/main'
-        run: |
-          jq '
-            .containerDefinitions |= map(
-              if .name=="'"$CONTAINER_NAME"'" then
-                .image = "'"$AWS_ACCOUNT_ID"'.dkr.ecr.'"$AWS_REGION"'.amazonaws.com/'"$ECR_REPO"':'"${{ github.sha }}"'"
-              else . end
-            )
-            |
-            del(
-              .taskDefinitionArn,
-              .revision,
-              .status,
-              .requiresAttributes,
-              .compatibilities,
-              .registeredAt,
-              .registeredBy
-            )
-          ' task-def.json > new-task-def.json
-
-      - name: Register new ECS task definition
-        if: github.ref == 'refs/heads/main'
-        id: register-task-def
-        run: |
-          TASK_DEF_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file://new-task-def.json \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
-
-          echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
-
-      - name: Update ECS service
-        if: github.ref == 'refs/heads/main'
-        run: |
-          aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_SERVICE \
-            --task-definition $TASK_DEF_ARN
-
-      
-
-
-
-
-
-
-
-
-
-
+          docker tag \
+          $CONTAINER_NAME:${{ github.sha }} \
+          $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${
