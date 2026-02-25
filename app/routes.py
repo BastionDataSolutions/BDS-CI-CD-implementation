@@ -3,6 +3,10 @@ from models import products, cart
 
 def register_routes(app):
 
+    @app.route("/")
+    def home():
+        return {"message": "ECS app running 🚀"}, 200
+
     @app.route("/health")
     def health():
         return {"status": "ok"}, 200
@@ -31,4 +35,3 @@ def register_routes(app):
         total = sum(item["price"] for item in cart)
         cart.clear()
         return {"message": "Order placed", "total_amount": total}, 200
-
