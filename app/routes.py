@@ -5,7 +5,46 @@ def register_routes(app):
 
     @app.route("/")
     def home():
-        return {"message": "ECS app running 🚀"}, 200
+        return """
+        <html>
+            <head>
+                <title>Flask App on ECS</title>
+                <style>
+                    body {
+                        font-family: Arial;
+                        text-align: center;
+                        margin-top: 60px;
+                        background-color: #f4f6f8;
+                    }
+                    h1 {
+                        color: #2c3e50;
+                    }
+                    ul {
+                        list-style: none;
+                        padding: 0;
+                    }
+                    li {
+                        margin: 10px 0;
+                        font-size: 18px;
+                    }
+                </style>
+            </head>
+            <body>
+                <h1>🚀 Flask Application Running on AWS ECS</h1>
+                <p>This service is deployed using Docker and ECS (Fargate)</p>
+
+                <h3>Available Endpoints</h3>
+                <ul>
+                    <li>/health – Health check</li>
+                    <li>/products – View products</li>
+                    <li>/cart – View cart</li>
+                    <li>/checkout – Checkout order</li>
+                </ul>
+
+                <p><b>Status:</b> Service is running successfully ✅</p>
+            </body>
+        </html>
+        """
 
     @app.route("/health")
     def health():
