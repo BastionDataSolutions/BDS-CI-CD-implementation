@@ -12,7 +12,7 @@ permissions:
 jobs:
   deploy-stage:
     runs-on: ubuntu-latest
-    environment: stage   # 👈 This enables manual approval
+    environment: stage   
 
     env:
       AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
